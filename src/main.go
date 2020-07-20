@@ -8,73 +8,83 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"text/template"
 )
 
 const (
-	port         = 8080
-	clientID     = "4ccc8676aaf54c94a6400ce027c1c93e"
-	clientSecret = "0fe59c37743341909e72e45664ea5f73"
-	scope        = "user-read-currently-playing"
+	port  = 8080
+	scope = "user-read-private user-read-email"
 )
 
 var (
-	redirectURI  = "http://localhost:" + strconv.Itoa(port) + "/callback"
-	authEndpoint = "https://accounts.spotify.com/authorize/?response_type=code&client_id=" + clientID + "&redirect_uri=" + redirectURI + "&scope=" + scope
+	redirectURI = "http://localhost:" + strconv.Itoa(port) + "/callback"
+	config      struct {
+		ClientID     string `json:"client_id"`
+		ClientSecret string `json:"client_secret"`
+	}
+	authEndpoint string
 )
 
 type auth struct {
 	Endpoint string
 }
 
-// Token Struct for Decoding Token Call Response
+// Token Struct for Decoding Access Token Call Response
 type token struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 }
 
-type currentTrack struct {
-	Item struct {
-		Album struct {
-			Images []struct {
-				Height int    `json:"height"`
-				Width  int    `json:"width"`
-				URL    string `json:"url"`
-			} `json:"images"`
-			Name string `json:"name"`
-		} `json:"album"`
-		Artists []struct {
-			Name string `json:"name"`
-		} `json:"artists"`
-		Name string `json:"name"`
-	} `json:"item"`
-}
-
 func main() {
+	setConfig()
+
 	fmt.Println("Spotify API")
 	fmt.Println("-------------------")
 	fmt.Println("Running on: http://localhost:8080/")
 
 	http.HandleFunc("/", homeHandler)
+	http.HandleFunc("/login", logInHandler)
 	http.HandleFunc("/callback", callbackHandler)
+	http.HandleFunc("/redirect", redirectHandler)
+	http.HandleFunc("/form", formHandler)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-func homeHandler(writer http.ResponseWriter, reader *http.Request) {
+func homeHandler(writer http.ResponseWriter, request *http.Request) {
+	fmt.Println("Id:", config.ClientID)
+	fmt.Println("secret:", config.ClientSecret)
+	accessCookie, err := request.Cookie("access_token")
+	if err == nil {
+		userRequest, err := http.NewRequest("GET", "https://api.spotify.com/v1/me", nil)
+		userRequest.Header.Set("Authorization", "Bearer "+accessCookie.Value)
+		checkError(err)
 
-	auth := auth{authEndpoint}
+		client := &http.Client{}
+		userResponse, err := client.Do(userRequest)
+		checkError(err)
 
-	path := "./templates/home.html"
+		defer userResponse.Body.Close()
 
-	template := template.Must(template.ParseFiles(path))
-	err := template.Execute(writer, auth)
+		userResponseBody, err := ioutil.ReadAll(userResponse.Body)
+		checkError(err)
+
+		fmt.Fprint(writer, string(userResponseBody))
+	} else {
+		http.Redirect(writer, request, "http://localhost:8080/login", 307)
+	}
+}
+
+func logInHandler(writer http.ResponseWriter, request *http.Request) {
+	template := template.Must(template.ParseFiles("./templates/login.html"))
+	err := template.Execute(writer, auth{authEndpoint})
 	checkError(err)
 }
 
-func callbackHandler(writer http.ResponseWriter, reader *http.Request) {
-	authCode := reader.URL.Query().Get("code")
+func callbackHandler(writer http.ResponseWriter, request *http.Request) {
+	authCode := request.URL.Query().Get("code")
 	client := http.Client{}
 	requestBody := url.Values{
 		"grant_type":   {"authorization_code"},
@@ -83,7 +93,7 @@ func callbackHandler(writer http.ResponseWriter, reader *http.Request) {
 	}.Encode()
 
 	tokenURI := "https://accounts.spotify.com/api/token"
-	encodedClientString := base64.StdEncoding.EncodeToString([]byte(clientID + ":" + clientSecret))
+	encodedClientString := base64.StdEncoding.EncodeToString([]byte(config.ClientID + ":" + config.ClientSecret))
 
 	request, err := http.NewRequest("POST", tokenURI, strings.NewReader(requestBody))
 	request.Header.Set("Authorization", "Basic "+encodedClientString)
@@ -103,49 +113,50 @@ func callbackHandler(writer http.ResponseWriter, reader *http.Request) {
 	checkError(err)
 
 	if token.AccessToken != "" {
-		request1, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/player/currently-playing", nil)
-		request1.Header.Set("Authorization", "Bearer "+token.AccessToken)
-		checkError(err)
+		accessCookie := http.Cookie{
+			Name:  "access_token",
+			Value: token.AccessToken,
+		}
+		http.SetCookie(writer, &accessCookie)
 
-		response1, err := client.Do(request1)
-		checkError(err)
+		refreshCookie := http.Cookie{
+			Name:  "refresh_token",
+			Value: token.RefreshToken,
+		}
+		http.SetCookie(writer, &refreshCookie)
 
-		defer response1.Body.Close()
-
-		responseBody1, err := ioutil.ReadAll(response1.Body)
-		checkError(err)
-
-		var currentTrack currentTrack
-
-		err = json.Unmarshal(responseBody1, &currentTrack)
-		checkError(err)
-
-		presentInformation(writer, currentTrack)
+		http.Redirect(writer, request, "http://localhost:8080/redirect", 307)
 	}
 }
 
-func presentInformation(writer http.ResponseWriter, currentTrack currentTrack) {
-	albumArtURL := "src=" + currentTrack.Item.Album.Images[0].URL
-	albumArtHeight := " height=" + strconv.Itoa(currentTrack.Item.Album.Images[0].Height)
-	albumArtWidth := " width=" + strconv.Itoa(currentTrack.Item.Album.Images[0].Width)
+func formHandler(writer http.ResponseWriter, request *http.Request) {
+	request.ParseForm()
+	fmt.Println(request.Form["session_id"])
+}
 
-	title := currentTrack.Item.Name
-	artist := currentTrack.Item.Artists[0].Name
-	album := currentTrack.Item.Album.Name
+func redirectHandler(writer http.ResponseWriter, request *http.Request) {
+	cookie, err := request.Cookie("access_token")
+	checkError(err)
 
-	// TODO: template this....
-	fmt.Fprintf(writer, ` 
-		<!DOCTYPE html>
-		<html>
-			<body>
-			<button onclick="window.location.href='http://localhost:8080/';">
-    			Home
-  			</button>
-			<h2>Playing "`+title+`" By "`+artist+`" On "`+album+`"</h2>
-				<img `+albumArtURL+albumArtHeight+albumArtWidth+`></img>
-			</body>
-		</html>
-		`)
+	fmt.Println(cookie)
+	fmt.Fprintf(writer, "<h1>Yo!</h1>")
+}
+
+func setConfig() {
+	configFile, err := os.Open("config.json")
+	checkError(err)
+
+	defer configFile.Close()
+
+	configBytes, err := ioutil.ReadAll(configFile)
+	checkError(err)
+
+	json.Unmarshal(configBytes, &config)
+
+	fmt.Println("https://accounts.spotify.com/authorize/?response_type=code&client_id=" + config.ClientID + "&redirect_uri=" + redirectURI + "&scope=" + scope)
+	fmt.Println(config.ClientID)
+
+	authEndpoint = "https://accounts.spotify.com/authorize/?response_type=code&client_id=" + config.ClientID + "&redirect_uri=" + redirectURI + "&scope=" + scope
 }
 
 func checkError(err error) {
