@@ -6,21 +6,34 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 )
 
+// Expired Token Message
+// user: {
+// 	"error": {
+// 	  "status": 401,
+// 	  "message": "The access token expired"
+// 	}
+// }
+
 const (
-	port  = 8080
-	scope = "user-read-private user-read-email"
+	port            = 8080
+	scope           = "user-read-private user-read-email"
+	charset         = "abcdefghijklmnopqrstuvwxyz" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	sessionIDLength = 15
 )
 
 var (
-	redirectURI = "http://localhost:" + strconv.Itoa(port) + "/callback"
+	seededRand  *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+	redirectURI            = "http://localhost:" + strconv.Itoa(port) + "/callback"
 	config      struct {
 		ClientID     string `json:"client_id"`
 		ClientSecret string `json:"client_secret"`
@@ -28,8 +41,26 @@ var (
 	authEndpoint string
 )
 
-type auth struct {
-	Endpoint string
+type loginPage struct {
+	AuthEndpoint string
+}
+
+// Struct to hold all information from user information call.
+type userInformation struct {
+	Images []struct {
+		URL string `json:"url"`
+	} `json:"images"`
+	Error spotifyError
+}
+
+type spotifyError struct {
+	Status  int    `json:"status"`
+	Message string `json:"message"`
+}
+
+type homePage struct {
+	ProfilePicture string
+	SessionID      string
 }
 
 // Token Struct for Decoding Access Token Call Response
@@ -48,14 +79,12 @@ func main() {
 	http.HandleFunc("/", homeHandler)
 	http.HandleFunc("/login", logInHandler)
 	http.HandleFunc("/callback", callbackHandler)
-	http.HandleFunc("/redirect", redirectHandler)
+	http.HandleFunc("/host", hostHandler)
 	http.HandleFunc("/form", formHandler)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 func homeHandler(writer http.ResponseWriter, request *http.Request) {
-	fmt.Println("Id:", config.ClientID)
-	fmt.Println("secret:", config.ClientSecret)
 	accessCookie, err := request.Cookie("access_token")
 	if err == nil {
 		userRequest, err := http.NewRequest("GET", "https://api.spotify.com/v1/me", nil)
@@ -71,7 +100,19 @@ func homeHandler(writer http.ResponseWriter, request *http.Request) {
 		userResponseBody, err := ioutil.ReadAll(userResponse.Body)
 		checkError(err)
 
-		fmt.Fprint(writer, string(userResponseBody))
+		var user userInformation
+
+		checkError(json.Unmarshal(userResponseBody, &user))
+
+		if user.Error.Status == 200 {
+			template := template.Must(template.ParseFiles("./templates/home.html"))
+			checkError(template.Execute(writer, homePage{user.Images[0].URL, createSessionID()}))
+		} else if user.Error.Status == 401 {
+			// Refresh Token
+			fmt.Println("401 son")
+		} else {
+			http.Redirect(writer, request, "http://localhost:8080/login", 307)
+		}
 	} else {
 		http.Redirect(writer, request, "http://localhost:8080/login", 307)
 	}
@@ -79,7 +120,7 @@ func homeHandler(writer http.ResponseWriter, request *http.Request) {
 
 func logInHandler(writer http.ResponseWriter, request *http.Request) {
 	template := template.Must(template.ParseFiles("./templates/login.html"))
-	err := template.Execute(writer, auth{authEndpoint})
+	err := template.Execute(writer, loginPage{authEndpoint})
 	checkError(err)
 }
 
@@ -125,21 +166,20 @@ func callbackHandler(writer http.ResponseWriter, request *http.Request) {
 		}
 		http.SetCookie(writer, &refreshCookie)
 
-		http.Redirect(writer, request, "http://localhost:8080/redirect", 307)
+		http.Redirect(writer, request, "http://localhost:8080/", 307)
 	}
+}
+
+func hostHandler(writer http.ResponseWriter, request *http.Request) {
+	request.ParseForm()
+	fmt.Println(request.Form["session_id"])
+	fmt.Println("host:", request)
+	fmt.Fprint(writer, "here")
 }
 
 func formHandler(writer http.ResponseWriter, request *http.Request) {
 	request.ParseForm()
 	fmt.Println(request.Form["session_id"])
-}
-
-func redirectHandler(writer http.ResponseWriter, request *http.Request) {
-	cookie, err := request.Cookie("access_token")
-	checkError(err)
-
-	fmt.Println(cookie)
-	fmt.Fprintf(writer, "<h1>Yo!</h1>")
 }
 
 func setConfig() {
@@ -153,10 +193,15 @@ func setConfig() {
 
 	json.Unmarshal(configBytes, &config)
 
-	fmt.Println("https://accounts.spotify.com/authorize/?response_type=code&client_id=" + config.ClientID + "&redirect_uri=" + redirectURI + "&scope=" + scope)
-	fmt.Println(config.ClientID)
-
 	authEndpoint = "https://accounts.spotify.com/authorize/?response_type=code&client_id=" + config.ClientID + "&redirect_uri=" + redirectURI + "&scope=" + scope
+}
+
+func createSessionID() string {
+	b := make([]byte, sessionIDLength)
+	for i := range b {
+		b[i] = charset[seededRand.Intn(len(charset))]
+	}
+	return string(b)
 }
 
 func checkError(err error) {
