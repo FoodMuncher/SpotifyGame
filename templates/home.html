@@ -1,32 +1,18 @@
 <!doctype html>
 <html>
-<head>
-  <meta charset="utf-8">
-  <title>SpotiVote - Home</title>
-  <style>
-    .container {
-      position: relative;
-    }
-    
-    .profile_pic {
-      position: absolute;
-      top: 8px;
-      right: 16px;
-    }
-    </style>
-</head>
+  <head>
+    <meta charset="utf-8">
+    <title>SpotiVote - Home</title>
+    <link rel="stylesheet" type="text/css" href="/static/style.css">
+  </head>
 
-<body>
-    <div class="container">
-        <h1>SpotiVote</h1>
-        <div class="profile_pic">
-            <img src="{{ .ProfilePicture }}" alt="Profile Picture" height=75px>
-        </div>
+  <body>
+    <div class="page">
+      <img class="profile_pic" src="{{ .ProfilePicture }}" alt="Profile Picture" height=90px>
+      <h1><b>SpotiVote</b></h1>
+      <form action="/host" method="post">
+        <button class="button" name="session_id" type="submit" value="{{ .SessionID }}">Start a Session</button>
+      </form> 
     </div>
-    <div>
-        <form action="/host" method="post">
-            <button name="session_id" type="submit" value="{{ .SessionID }}">Start a Session</button>
-        </form> 
-    </div>
-</body>
+  </body>
 </html>

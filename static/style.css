@@ -1,0 +1,88 @@
+* {
+  color: maroon !important;
+  text-decoration: none;
+  font-family: Courier New;
+  font-style: normal;
+  font-weight: normal;
+  text-align: center;
+}
+ 
+body {
+  width: 100%;
+  background-color: antiquewhite;
+  padding: 0;
+}
+
+h1 {
+  font-weight: 900;
+}
+
+img {
+  border-radius: 50%;
+  border: 3px solid maroon !important;
+}
+
+hr {
+  height: 1px;
+  background-color: maroon;
+  border: none;
+}
+
+.topBar img {
+  right: 20px;
+}
+
+.topBar h2 {
+  float: left;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.page {
+  margin-top: 10%
+}
+
+.button {
+  background: antiquewhite;
+  padding: 20px;
+  border: 2px solid maroon !important;
+  display: inline-block;
+  transition: all 0.4s ease 0s;
+  border-radius: 6px;
+}
+  
+.button:hover {
+  color: antiquewhite !important;
+  background: maroon;
+  border-color: maroon !important;
+  transition: all 0.3s ease 0s;
+}
+
+.submitButton {
+  background: antiquewhite;
+  padding: 10px;
+  border: 2px solid maroon !important;
+  display: inline-block;
+  transition: all 0.4s ease 0s;
+  border-radius: 6px;
+}
+
+.submitButton:hover {
+  color: antiquewhite !important;
+  background: maroon;
+  border-color: maroon !important;
+  transition: all 0.3s ease 0s;
+}
+
+.textInput {
+  background: #FCF5EB;
+  padding: 10px;
+  border: 2px solid maroon !important;
+  display: inline-block;
+  outline: none;
+  border-radius: 6px;
+}
+
+.textInput:focus {
+  background: #FEFDFB;
+}

@@ -3,16 +3,20 @@
 <head>
   <meta charset="utf-8">
   <title>SpotiVote - Login</title>
+  <link rel="stylesheet" type="text/css" href="/static/style.css">
 </head>
 <body>
-  <h1>Log In Page</h1>
-  <button onclick="window.location.href='{{ .Endpoint }}';">
-    Log Into Spotify
-  </button>
-  <form action="/form" method="post">
-    <label for="fname">Session ID:</label><br>
-    <input type="text" id="session_id" name="session_id" value="Session ID"><br>
-    <input type="submit" value="Submit">
-  </form> 
+  <div class="page">
+    <h1>Log In Page</h1>
+    <button class="button" onclick="window.location.href='{{ .AuthEndpoint }}';">
+      Log Into Spotify
+    </button>
+    <br><br>
+    <form action="/form" method="post">
+      <label for="fname">Session ID:</label><br><br>
+      <input class ="textInput" type="text" id="session_id" name="session_id" placeholder="Enter Session ID" autocomplete="off">
+      <input class="submitButton" type="submit" value="Submit">
+    </form> 
+  </div>
 </body>
 </html>

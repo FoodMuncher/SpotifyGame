@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>SpotiVote - Hosting</title>
+    <link rel="stylesheet" type="text/css" href="/static/style.css">
+  </head>
+
+  <body>
+    <div class="topBar">
+      <img src="{{ .ProfilePicture }}" height=65px>
+      <h2>SpotiVote - Session ID: {{ .SessionID }}</h2>
+    </div>
+    <hr>
+    <div class="page">
+      <h1>Host</h1>
+      <h2>Leaderboard:</h2>
+      <ol>
+        {{ range .List }}
+          <li>{{ . }}</li>
+        {{ end }}
+      </ol>
+    </div>
+  </body>
+</html>

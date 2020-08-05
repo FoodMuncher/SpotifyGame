@@ -14,15 +14,13 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	store "./store"
 )
 
-// Expired Token Message
-// user: {
-// 	"error": {
-// 	  "status": 401,
-// 	  "message": "The access token expired"
-// 	}
-// }
+// =====================================
+// Global Constants
+// =====================================
 
 const (
 	port            = 8080
@@ -30,6 +28,15 @@ const (
 	charset         = "abcdefghijklmnopqrstuvwxyz" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	sessionIDLength = 15
 )
+
+const (
+	add    = "ADD"
+	remove = "REMOVE"
+)
+
+// =====================================
+// Global Variables
+// =====================================
 
 var (
 	seededRand  *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -41,21 +48,17 @@ var (
 	authEndpoint string
 )
 
+var (
+	sessionStore = store.NewStore()
+	indexStore   = store.NewStore()
+)
+
+// =====================================
+// Template Structs
+// =====================================
+
 type loginPage struct {
 	AuthEndpoint string
-}
-
-// Struct to hold all information from user information call.
-type userInformation struct {
-	Images []struct {
-		URL string `json:"url"`
-	} `json:"images"`
-	Error spotifyError
-}
-
-type spotifyError struct {
-	Status  int    `json:"status"`
-	Message string `json:"message"`
 }
 
 type homePage struct {
@@ -63,11 +66,39 @@ type homePage struct {
 	SessionID      string
 }
 
+type hostPage struct {
+	ProfilePicture string
+	SessionID      string
+	List           []string
+}
+
+// =====================================
+// JSON Structs
+// =====================================
+
+// Struct to hold all information from user information call.
+type userInformationJSON struct {
+	Images []struct {
+		URL string `json:"url"`
+	} `json:"images"`
+	URI   string `json:"uri"`
+	Error spotifyErrorJSON
+}
+
+type spotifyErrorJSON struct {
+	Status  int    `json:"status"`
+	Message string `json:"message"`
+}
+
 // Token Struct for Decoding Access Token Call Response
-type token struct {
+type tokenJSON struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 }
+
+// =====================================
+// Functions
+// =====================================
 
 func main() {
 	setConfig()
@@ -81,6 +112,10 @@ func main() {
 	http.HandleFunc("/callback", callbackHandler)
 	http.HandleFunc("/host", hostHandler)
 	http.HandleFunc("/form", formHandler)
+	http.HandleFunc("/favicon.ico", faviconHandler)
+
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
@@ -100,11 +135,15 @@ func homeHandler(writer http.ResponseWriter, request *http.Request) {
 		userResponseBody, err := ioutil.ReadAll(userResponse.Body)
 		checkError(err)
 
-		var user userInformation
+		var user userInformationJSON
 
 		checkError(json.Unmarshal(userResponseBody, &user))
 
-		if user.Error.Status == 200 {
+		if user.Error == (spotifyErrorJSON{}) {
+			// TODO: check cookies first then if they don't exist, fetch them
+			setCookie(writer, "profile_picture", user.Images[0].URL)
+			setCookie(writer, "URI", user.URI)
+
 			template := template.Must(template.ParseFiles("./templates/home.html"))
 			checkError(template.Execute(writer, homePage{user.Images[0].URL, createSessionID()}))
 		} else if user.Error.Status == 401 {
@@ -149,37 +188,44 @@ func callbackHandler(writer http.ResponseWriter, request *http.Request) {
 	responseBody, err := ioutil.ReadAll(response.Body)
 	checkError(err)
 
-	var token token
+	var token tokenJSON
 	err = json.Unmarshal(responseBody, &token)
 	checkError(err)
 
 	if token.AccessToken != "" {
-		accessCookie := http.Cookie{
-			Name:  "access_token",
-			Value: token.AccessToken,
-		}
-		http.SetCookie(writer, &accessCookie)
-
-		refreshCookie := http.Cookie{
-			Name:  "refresh_token",
-			Value: token.RefreshToken,
-		}
-		http.SetCookie(writer, &refreshCookie)
+		setCookie(writer, "access_token", token.AccessToken)
+		setCookie(writer, "refresh_token", token.RefreshToken)
 
 		http.Redirect(writer, request, "http://localhost:8080/", 307)
 	}
 }
 
+// HostHandler - The page a user goes to after they log in and host a session.
+// TODO - have intermidiate endpoint that stores info then redirects to a different page. (Prevents from storeing same values multiple times...)
 func hostHandler(writer http.ResponseWriter, request *http.Request) {
 	request.ParseForm()
-	fmt.Println(request.Form["session_id"])
-	fmt.Println("host:", request)
-	fmt.Fprint(writer, "here")
+	sessionID := request.Form.Get("session_id")
+
+	URI, err := request.Cookie("URI")
+	checkError(err)
+
+	sessionStore.Add(sessionID, URI.Value)
+	indexStore.Add(URI.Value, sessionID)
+
+	profilePicture, err := request.Cookie("profile_picture")
+
+	template := template.Must(template.ParseFiles("./templates/host.html"))
+	checkError(template.Execute(writer, hostPage{profilePicture.Value, sessionID, []string{"Song 1", "Song 2", "Song 3"}}))
 }
 
 func formHandler(writer http.ResponseWriter, request *http.Request) {
 	request.ParseForm()
 	fmt.Println(request.Form["session_id"])
+}
+
+// FaviconHandler - Handles serving of favicon.icof
+func faviconHandler(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "static/spotify.ico")
 }
 
 func setConfig() {
@@ -198,10 +244,23 @@ func setConfig() {
 
 func createSessionID() string {
 	b := make([]byte, sessionIDLength)
-	for i := range b {
-		b[i] = charset[seededRand.Intn(len(charset))]
+	uniqueID := true
+
+	for uniqueID {
+		for i := range b {
+			b[i] = charset[seededRand.Intn(len(charset))]
+		}
+
+		uniqueID = sessionStore.Read(string(b)) != nil
 	}
 	return string(b)
+}
+
+func setCookie(writer http.ResponseWriter, name, value string) {
+	http.SetCookie(writer, &http.Cookie{
+		Name:  name,
+		Value: value,
+	})
 }
 
 func checkError(err error) {
