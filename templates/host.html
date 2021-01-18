@@ -8,18 +8,20 @@
 
   <body>
     <div class="topBar">
-      <img src="{{ .ProfilePicture }}" height=65px>
+      <a href="logout"><img src="{{ .ProfilePicture }}" height=65px></a>
       <h2>SpotiVote - Session ID: {{ .SessionID }}</h2>
     </div>
     <hr>
     <div class="page">
       <h1>Host</h1>
       <h2>Leaderboard:</h2>
-      <ol>
-        {{ range .List }}
-          <li>{{ . }}</li>
-        {{ end }}
-      </ol>
+      <div>
+        <ol>
+          {{ range .List }}
+            <li>{{ . }}</li>
+          {{ end }}
+        </ol>
+      </div>
     </div>
   </body>
 </html>
