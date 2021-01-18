@@ -111,7 +111,8 @@ func main() {
 	http.HandleFunc("/login", logInHandler)
 	http.HandleFunc("/callback", callbackHandler)
 	http.HandleFunc("/host", hostHandler)
-	http.HandleFunc("/form", formHandler)
+	http.HandleFunc("/logout", logoutHandler)
+	http.HandleFunc("/join", joinHandler)
 	http.HandleFunc("/favicon.ico", faviconHandler)
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
@@ -215,15 +216,25 @@ func hostHandler(writer http.ResponseWriter, request *http.Request) {
 	profilePicture, err := request.Cookie("profile_picture")
 
 	template := template.Must(template.ParseFiles("./templates/host.html"))
+
 	checkError(template.Execute(writer, hostPage{profilePicture.Value, sessionID, []string{"Song 1", "Song 2", "Song 3"}}))
 }
 
-func formHandler(writer http.ResponseWriter, request *http.Request) {
+func logoutHandler(writer http.ResponseWriter, request *http.Request) {
+	deleteCookie(writer, "URI")
+	deleteCookie(writer, "access_token")
+	deleteCookie(writer, "profile_picture")
+	deleteCookie(writer, "refresh_token")
+
+	http.Redirect(writer, request, "http://localhost:8080/login", 307)
+}
+
+func joinHandler(writer http.ResponseWriter, request *http.Request) {
 	request.ParseForm()
 	fmt.Println(request.Form["session_id"])
 }
 
-// FaviconHandler - Handles serving of favicon.icof
+// FaviconHandler - Handles serving of favicon.ico
 func faviconHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "static/spotify.ico")
 }
@@ -260,6 +271,13 @@ func setCookie(writer http.ResponseWriter, name, value string) {
 	http.SetCookie(writer, &http.Cookie{
 		Name:  name,
 		Value: value,
+	})
+}
+
+func deleteCookie(writer http.ResponseWriter, name string) {
+	http.SetCookie(writer, &http.Cookie{
+		Name:   name,
+		MaxAge: -1,
 	})
 }
 
